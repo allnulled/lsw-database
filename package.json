@@ -2,13 +2,14 @@
   "name": "lsw-database",
   "version": "1.0.0",
   "description": "Database tool for Lite Starter Webkit.",
-  "main": "index.js",
+  "main": "browsie.bundled.js",
   "scripts": {
-    "build": "echo 'no building for @allnulled/lsw-database'",
-    "versionate": "echo 'no versionate for @allnulled/lsw-database'",
-    "test": "echo 'no test for @allnulled/lsw-database'"
+    "build": "npx htmlbundler --list bundlelist.js --module none --id none --wrap false --output browsie.bundled.js",
+    "test": "echo 'no test from node.js for browsie'",
+    "test-browser": "npx http-server -c-1 . -o test.html",
+    "versionate": "echo 'no versionate for @allnulled/lsw-database'"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "author": "allnulled",
+  "license": "WTFPL"
 }
