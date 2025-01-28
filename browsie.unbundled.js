@@ -242,9 +242,9 @@
 
   class BrowsieTriggersAPI extends BrowsieStaticAPI {
 
-    static globMatch = TriggersApi.globMatch;
+    static globMatch = TriggersClass.globMatch;
 
-    triggers = new TriggersApi()
+    triggers = new TriggersClass()
 
   }
 
