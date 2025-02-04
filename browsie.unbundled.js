@@ -34,42 +34,6 @@
       }
     }
 
-    /*
-    // Crea la base de datos con el esquema final
-    static createDatabase(dbName, storeDefinitions) {
-      this.trace("Browsie.createDatabase", arguments);
-      return new Promise((resolve, reject) => {
-        const request = indexedDB.open(dbName);
-        request.onsuccess = () => {
-          request.result.close();
-          resolve(request.result);
-        };
-        request.onerror = (error) => reject(error);
-
-        // Establecemos el esquema final
-        request.onupgradeneeded = (event) => {
-          const db = event.target.result;
-          const storeKeys = Object.keys(storeDefinitions);
-          storeKeys.forEach(storeKey => {
-            const store = storeDefinitions[storeKey];
-            if (!db.objectStoreNames.contains(storeKey)) {
-              const objectStore = db.createObjectStore(storeKey, {
-                keyPath: "id",
-                autoIncrement: true,
-              });
-              for (let storeIndex of store) {
-                const storeName = storeIndex.replace(/^\!/g, "");
-                objectStore.createIndex(storeName, storeName, {
-                  unique: storeIndex.startsWith("!")
-                });
-              }
-            }
-          });
-        };
-      });
-    }
-    //*/
-
     static createDatabase(dbName, schemaDefinition = null, version = 1, versionUpgrades = {}) {
       this.trace("Browsie.createDatabase", arguments);
       return new Promise((resolve, reject) => {
