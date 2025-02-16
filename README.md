@@ -260,3 +260,14 @@ We are using [@allnulled/triggers-api](https://github.com/allnulled/triggers-api
 This allows you to use **triggers pattern** in multiple places, for multiple purposes or APIs.
 
 It is up to you. On `TriggersApi` global, you can find.
+
+
+
+
+
+
+## Documentación extendida para LSW
+
+1. Hay que usar `createDatabase` antes que `open` siempre, y cuando quieres versionar la base de datos, vas ahí y añades tu función.
+
+2. En esta librería tienes las globales `window.Browsie` y `window.LswDatabase`.

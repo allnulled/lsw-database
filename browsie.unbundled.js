@@ -59,6 +59,9 @@
                   keyPath: "id",
                   autoIncrement: true,
                 });
+                if(!Array.isArray(schemaDefinition[storeName])) {
+                  throw new Error(`Required property «schemaDefinition.${storeName}» to be an array on «LswDatabase.createDatabase»`);
+                }
                 schemaDefinition[storeName].forEach((index) => {
                   const indexName = index.replace(/^\!/, "");
                   objectStore.createIndex(indexName, indexName, { unique: index.startsWith("!") });
@@ -411,7 +414,20 @@
   }
 
   Browsie.default = Browsie;
+  window.Browsie = Browsie;
 
-  return Browsie;
+  /* Extended API */
+
+  class LswDatabase extends Browsie {
+    
+    class = this.constructor;
+
+  }
+
+  LswDatabase.default = LswDatabase;
+  window.LswDatabase = LswDatabase;
+
+
+  return LswDatabase;
 
 });
