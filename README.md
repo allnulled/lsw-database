@@ -221,6 +221,14 @@ This is the test that is ensuring the API right now. There are 3 tests in 1 func
           console.log("Triggers are working fine");
         }
       }, 1000);
+      const resultTmp = await db.selectMany("tabla1", v => v.uuid === "5");
+      console.log(resultTmp);
+      if(!Array.isArray(resultTmp)) {
+        throw new Error("Error expected selectMany to work (1)");
+      }
+      if(resultTmp.length !== 1) {
+        throw new Error("Error expected selectMany to work (2)");
+      }
       await db.close();
     }
     document.querySelector("#test").textContent += "\n[✔] Browsie Triggers API Tests passed successfully.";
