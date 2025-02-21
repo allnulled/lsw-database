@@ -131,8 +131,15 @@
           console.log("Triggers are working fine");
         }
       }, 1000);
-      // await db.close();
-      window.db = db;
+      const resultTmp = await db.selectMany("tabla1", v => v.uuid === "5");
+      console.log(resultTmp);
+      if(!Array.isArray(resultTmp)) {
+        throw new Error("Error expected selectMany to work (1)");
+      }
+      if(resultTmp.length !== 1) {
+        throw new Error("Error expected selectMany to work (2)");
+      }
+      await db.close();
     }
     document.querySelector("#test").textContent += "\n[✔] Browsie Triggers API Tests passed successfully.";
   } catch (error) {
