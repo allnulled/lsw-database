@@ -3006,7 +3006,6 @@
   LswDatabase.default = LswDatabase;
   window.LswDatabase = LswDatabase;
 
-
   return LswDatabase;
 
 });
