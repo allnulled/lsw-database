@@ -332,6 +332,52 @@
       return error;
     }
 
+    // Método para seleccionar elementos de un store con un filtro
+    select(store, filter) {
+      this.constructor.trace("browsie.select", arguments);
+      this.triggers.emit(`crud.select.one.${store}`, { store, filter });
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction(store, 'readonly');
+        const objectStore = transaction.objectStore(store);
+        const request = objectStore.getAll();
+
+        request.onsuccess = () => {
+          const result = request.result.filter(item => {
+            return Object.keys(filter).every(key => item[key] === filter[key]);
+          });
+          resolve(result);
+        };
+        request.onerror = (error) => reject(this._expandError(error, `Error on «browsie.select» operation over store «${store}»: `));
+      });
+    }
+
+    selectMany(store, filterFn = i => true) {
+      this.constructor.trace("browsie.selectMany", arguments);
+      this.triggers.emit(`crud.select.many.${store}`, { store, filterFn });
+    
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction(store, 'readonly');
+        const objectStore = transaction.objectStore(store);
+        const request = objectStore.openCursor(); // Usa cursor para recorrer la BD sin cargar todo en memoria
+    
+        const results = [];
+        request.onsuccess = (event) => {
+          const cursor = event.target.result;
+          if (cursor) {
+            if (filterFn(cursor.value)) { // Aplica la función de filtro
+              results.push(cursor.value);
+            }
+            cursor.continue(); // Avanza al siguiente registro
+          } else {
+            resolve(results); // Se terminó el recorrido
+          }
+        };
+    
+        request.onerror = (error) =>
+          reject(this._expandError(error, `Error on «browsie.selectMany» operation over store «${store}»: `));
+      });
+    }    
+
     // Método para insertar varios items en un store
     insertMany(store, items) {
       this.constructor.trace("browsie.insertMany", arguments);

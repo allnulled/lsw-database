@@ -131,7 +131,8 @@
           console.log("Triggers are working fine");
         }
       }, 1000);
-      await db.close();
+      // await db.close();
+      window.db = db;
     }
     document.querySelector("#test").textContent += "\n[✔] Browsie Triggers API Tests passed successfully.";
   } catch (error) {
