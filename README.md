@@ -25,9 +25,16 @@ The global `window.Browsie` should now be available.
 ```js
 await Browsie.listDatabases()
 await Browsie.deleteDatabase(dbName)
-await Browsie.createDatabase(dbName, storeDefinition, version = 1, versionUpgrades = [])
+await Browsie.createDatabase(dbName, storeDefinition, version = 1, versionUpgrades = []) // Opens a database with awareness flag of versionation, optionally 
 await Browsie.getSchema(dbName)
+await Browsie.createTable(args)
+await Browsie.createColumn(args)
+await Browsie.renameTable(args)
+await Browsie.renameColumn(args)
+await Browsie.deleteTable(args)
+await Browsie.deleteColumn(args)
 await Browsie.globMatch(patterns, texts)
+await Browsie.open(dbName) // opens a database by its name on its current version nomatterwhich.
 browsie = new Browsie(dbName)
 await browsie.open()
 await browsie.select(store, filter)
@@ -96,7 +103,7 @@ This is the test that is ensuring the API right now. There are 3 tests in 1 func
         articulos: ["!nombre", "categorias", "resumen", "fecha", "autor", "inspiracion", "tags"],
         productos: ["!nombre", "!modeloId", "categorias", "descripcion"]
       }, 2, {
-        2: function(db) {
+        2: function (db) {
           if (!db.objectStoreNames.contains("orders")) {
             const ordersStore = db.createObjectStore("orders", {
               keyPath: "id",
@@ -171,10 +178,10 @@ This is the test that is ensuring the API right now. There are 3 tests in 1 func
       schema = await Browsie.getSchema("browsie_test_schema");
       console.log(schema);
       await db.close();
+      // await Browsie.deleteDatabase("browsie_test_data");
+      // await Browsie.deleteDatabase("browsie_test_schema");
+      document.querySelector("#test").textContent += "\n[✔] Browsie Schema API Tests Pack 1 passed successfully.";
     }
-    // await Browsie.deleteDatabase("browsie_test_data");
-    // await Browsie.deleteDatabase("browsie_test_schema");
-    document.querySelector("#test").textContent += "\n[✔] Browsie Schema API Tests passed successfully.";
     Triggers_api: {
       console.log(await Browsie.globMatch([
         "crud.insert.*.users",
@@ -191,19 +198,19 @@ This is the test that is ensuring the API right now. There are 3 tests in 1 func
       ]));
       const db = await Browsie.open("browsie_test_schema");
       let counter = 0;
-      await db.triggers.register("crud.insert.one.tabla1", "temp1", function() {
+      await db.triggers.register("crud.insert.one.tabla1", "temp1", function () {
         console.log("triggering temp1");
         counter -= 2;
       }, {
         priority: 20
       });
-      await db.triggers.register("crud.insert.one.tabla1", "temp2", function() {
+      await db.triggers.register("crud.insert.one.tabla1", "temp2", function () {
         console.log("triggering temp2");
         counter *= 10;
       }, {
         priority: 10
       });
-      await db.triggers.register("crud.insert.one.tabla1", "temp3", function() {
+      await db.triggers.register("crud.insert.one.tabla1", "temp3", function () {
         console.log("triggering temp3");
         counter += 5;
       }, {
@@ -215,7 +222,7 @@ This is the test that is ensuring the API right now. There are 3 tests in 1 func
       console.log(db);
       setTimeout(() => {
         console.log(counter);
-        if(counter !== 30) {
+        if (counter !== 30) {
           console.error("Failed calculus");
         } else {
           console.log("Triggers are working fine");
@@ -223,15 +230,193 @@ This is the test that is ensuring the API right now. There are 3 tests in 1 func
       }, 1000);
       const resultTmp = await db.selectMany("tabla1", v => v.uuid === "5");
       console.log(resultTmp);
-      if(!Array.isArray(resultTmp)) {
+      if (!Array.isArray(resultTmp)) {
         throw new Error("Error expected selectMany to work (1)");
       }
-      if(resultTmp.length !== 1) {
+      if (resultTmp.length !== 1) {
         throw new Error("Error expected selectMany to work (2)");
       }
       await db.close();
     }
     document.querySelector("#test").textContent += "\n[✔] Browsie Triggers API Tests passed successfully.";
+
+    Schema_api_2: {
+      const checkSchemaHasColumn = function (schema, table, columnId) {
+        if (!(table in schema)) {
+          return false;
+        }
+        const matchedColumns = schema[table].indexes.filter(column => column.name === columnId);
+        if (matchedColumns.length === 0) {
+          return false;
+        }
+        return true;
+      };
+      await Browsie.deleteDatabase("browsie_test_schema_2");
+      await Browsie.createDatabase("browsie_test_schema_2", {
+        userzz: ["name", "alias", "!email"]
+      });
+      Insert_some_registries: {
+        const db = await Browsie.open("browsie_test_schema_2");
+        await db.insertMany("userzz", [{
+          name: "userzz1",
+          alias: "userzz1",
+          email: "userzz1@userzz.org" + BrowsieMigration.prototype.$getRandomString(4)
+        }, {
+          name: "userzz2",
+          alias: "userzz2",
+          email: "userzz2@userzz.org" + BrowsieMigration.prototype.$getRandomString(4)
+        }, {
+          name: "userzz3",
+          alias: "userzz3",
+          email: "userzz3@userzz.org" + BrowsieMigration.prototype.$getRandomString(4)
+        }]);
+        await db.close();
+      }
+      const schema1 = await Browsie.getSchema("browsie_test_schema_2");
+      await BrowsieMigration.createTable({
+        fromDatabase: "browsie_test_schema_2",
+        table: "messages",
+        tableDefinition: ["user_source", "user_destination", "content", "sent_at"]
+      }).commit();
+      if ("messages" in schema1) {
+        throw new Error("This should not happen (1)");
+      }
+      const schema2 = await Browsie.getSchema("browsie_test_schema_2");
+      if (!("messages" in schema2)) {
+        throw new Error("This should not happen (2)");
+      }
+      if ("secrets" in schema2) {
+        throw new Error("This should not happen (3)");
+      }
+      const schema3 = await Browsie.getSchema("browsie_test_schema_2");
+      await BrowsieMigration.createTable({
+        fromDatabase: "browsie_test_schema_2",
+        table: "secrets",
+        tableDefinition: ["user_source", "user_destination", "content", "sent_at"]
+      }).commit();
+      const schema4 = await Browsie.getSchema("browsie_test_schema_2");
+      if (!("secrets" in schema4)) {
+        throw new Error("This should not happen (4)");
+      }
+      if ("attached_documents" in schema4) {
+        throw new Error("This should not happen (5)");
+      }
+      await BrowsieMigration.createTable({
+        fromDatabase: "browsie_test_schema_2",
+        table: "attached_documents",
+        tableDefinition: ["user_source", "title", "document_content"]
+      }).commit();
+      const schema5 = await Browsie.getSchema("browsie_test_schema_2");
+      if (!("attached_documents" in schema5)) {
+        throw new Error("This should not happen (6)");
+      }
+      if ("attached_documents_remamed" in schema5) {
+        throw new Error("This should not happen (7)");
+      }
+      await BrowsieMigration.renameTable({
+        fromDatabase: "browsie_test_schema_2",
+        tableSource: "attached_documents",
+        tableDestination: "attached_documents_renamed",
+      }).commit();
+      const schema6 = await Browsie.getSchema("browsie_test_schema_2");
+      if ("attached_documents" in schema6) {
+        throw new Error("This should not happen (8)");
+      }
+      if (!("attached_documents_renamed" in schema6)) {
+        throw new Error("This should not happen (9)");
+      }
+      if (!checkSchemaHasColumn(schema6, "attached_documents_renamed", "document_content")) {
+        throw new Error("This should not happen (10)");
+      }
+      if (checkSchemaHasColumn(schema6, "attached_documents_renamed", "document")) {
+        throw new Error("This should not happen (11)");
+      }
+      await BrowsieMigration.deleteColumn({
+        fromDatabase: "browsie_test_schema_2",
+        table: "attached_documents_renamed",
+        column: "document_content",
+      }).commit();
+      const schema7 = await Browsie.getSchema("browsie_test_schema_2");
+      if (checkSchemaHasColumn(schema7, "attached_documents_renamed", "document_content")) {
+        throw new Error("This should not happen (12)");
+      }
+      if (checkSchemaHasColumn(schema7, "attached_documents_renamed", "document")) {
+        throw new Error("This should not happen (13)");
+      }
+      await BrowsieMigration.createColumn({
+        fromDatabase: "browsie_test_schema_2",
+        table: "attached_documents_renamed",
+        column: "document_2",
+        columnDefinition: {}
+      }).commit();
+      const schema8 = await Browsie.getSchema("browsie_test_schema_2");
+      if (!checkSchemaHasColumn(schema8, "attached_documents_renamed", "document_2")) {
+        throw new Error("This should not happen (14)");
+      }
+      if (checkSchemaHasColumn(schema7, "attached_documents_renamed", "document_2_renamed")) {
+        throw new Error("This should not happen (15)");
+      }
+      await BrowsieMigration.renameColumn({
+        fromDatabase: "browsie_test_schema_2",
+        table: "attached_documents_renamed",
+        columnSource: "document_2",
+        columnDestination: "document_2_renamed",
+      }).commit();
+      const schema9 = await Browsie.getSchema("browsie_test_schema_2");
+      if (checkSchemaHasColumn(schema9, "attached_documents_renamed", "document_2")) {
+        throw new Error("This should not happen (16)");
+      }
+      if (!checkSchemaHasColumn(schema9, "attached_documents_renamed", "document_2_renamed")) {
+        throw new Error("This should not happen (17)");
+      }
+      console.log(schema9);
+
+
+      Ensure_rename_column_transfers_data: {
+        const insertRow = async function(dbName, tableId, row) {
+          const db = await Browsie.open(dbName);
+          const id = await db.insert(tableId, row);
+          await db.close();
+          return id;
+        };
+        const getAllRowsFrom = async function(dbName, tableId) {
+          const db = await Browsie.open(dbName);
+          const data = await db.selectMany(tableId, v => true);
+          await db.close();
+          return data;
+        };
+        const id1 = await insertRow("browsie_test_schema_2", "attached_documents_renamed", { metadata1: "whatever1" });
+        const id2 = await insertRow("browsie_test_schema_2", "attached_documents_renamed", { metadata1: "whatever2" });
+        const id3 = await insertRow("browsie_test_schema_2", "attached_documents_renamed", { metadata1: "whatever3" });
+        const all1 = await getAllRowsFrom("browsie_test_schema_2", "attached_documents_renamed");
+        console.log(all1);
+        if(all1.length !== 6) {
+          throw new Error("This should not happen (18)");
+        }
+        await BrowsieMigration.renameColumn({
+          fromDatabase: "browsie_test_schema_2",
+          table: "attached_documents_renamed",
+          columnSource: "document_2",
+          columnDestination: "document_2_renamed",
+        }).commit();
+        const schema10 = await Browsie.getSchema("browsie_test_schema_2");
+        if (checkSchemaHasColumn(schema10, "attached_documents_renamed", "document_2")) {
+          throw new Error("This should not happen (19)");
+        }
+        if (!checkSchemaHasColumn(schema10, "attached_documents_renamed", "document_2_renamed")) {
+          throw new Error("This should not happen (20)");
+        }
+        const all2 = await getAllRowsFrom("browsie_test_schema_2", "attached_documents_renamed");
+        if(all2.length !== 6) {
+          throw new Error("This should not happen (21)");
+        }
+        console.log(all2);
+      }
+
+
+      document.querySelector("#test").textContent += "\n[✔] Browsie Schema API Tests Pack 2 passed successfully.";
+    }
+
   } catch (error) {
     console.log(error);
   }
@@ -280,3 +465,56 @@ It is up to you. On `TriggersApi` global, you can find.
 1. Hay que usar `createDatabase` antes que `open` siempre, y cuando quieres versionar la base de datos, vas ahí y añades tu función.
 
 2. En esta librería tienes las globales `window.Browsie` y `window.LswDatabase`.
+
+## Nuevas features
+
+### Schema IO
+
+Antes solo se podía hacer `Browsie.getSchema(dbName)`.
+
+Ahora puedes alterar el esquema también desde el Browsie global:
+
+```js
+await Browsie.createTable({
+  fromDatabase: "source_db",
+  table: "my_new_table",
+  tableDefinition: ["name", "city", "age"]
+});
+await Browsie.renameTable({
+  fromDatabase: "source_db",
+  tableSource: "my_new_table",
+  tableDestination: "my_new_table_2"
+});
+await Browsie.deleteTable({
+  fromDatabase: "source_db",
+  table: "my_new_table_2",
+});
+await Browsie.createColumn({
+  fromDatabase: "source_db",
+  table: "my_new_table",
+  column: "name",
+  columnDefinition: {
+    isUnique: false,
+  }
+});
+await Browsie.renameColumn({
+  fromDatabase: "source_db",
+  table: "my_new_table",
+  columnSource: "age",
+  columnDestination: "birthday"
+});
+await Browsie.deleteColumn({
+  fromDatabase: "source_db",
+  table: "my_new_table",
+  column: "obsolete_index"
+});
+```
+
+Esta API **destruye las versiones de IndexedDB** que tuviera y recrea toda la base de datos, por lo cual:
+
+  - Pierdes retrocompatibilidad de versiones con bases de datos.
+  - Pierdes compatibilidad con código que gestione versionado (no necesariamente, pero fácilmente) vía IndexedDB.
+  - Si sale mal, puede quedarse colgado y perder los datos.
+  - No es el mejor algoritmo de transferencia de datos tampoco.
+
+Esta API es solo para hacer el parche. Está bien programada, pero los caminos lógicos no serían los recomendados por los estándares. Sin embargo, si sabes qué estás haciendo, puede ser útil igual.
