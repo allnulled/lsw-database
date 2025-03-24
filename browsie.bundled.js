@@ -2749,12 +2749,12 @@
         const request = indexedDB.deleteDatabase(dbName);
 
         request.onblocked = () => {
-          db.close();
+          // db.close();
           reject(new Error("Error al eliminar la base de datos porque está bloqueada"));
         };
         request.onsuccess = () => resolve();
         request.onerror = () => {
-          db.close();
+          // db.close();
           reject(new Error('Error al eliminar la base de datos'));
         };
       }).then(() => {
@@ -2816,6 +2816,31 @@
       }
     }
 
+    static async pickRow(databaseId, tableId, rowId) {
+      this.trace("Browsie.pickRow", arguments);
+      $ensure(databaseId).type("string");
+      $ensure(tableId).type("string");
+      $ensure(rowId).type("number");
+      let connection = undefined;
+      try {
+        connection = await this.open(databaseId);
+        const rows = await connection.selectMany(tableId, v => v.id === rowId);
+        if (rows.length === 1) {
+          return rows[0];
+        } else if (rows.length === 0) {
+          return undefined;
+        }
+      } catch (error) {
+        throw error;
+      } finally {
+        try {
+          await connection.close();
+        } catch (error) {
+          console.log("Could not close connection on picking row");
+        }
+      }
+    }
+
   }
 
   class BrowsieTriggersAPI extends BrowsieStaticAPI {
@@ -2839,28 +2864,42 @@
     // Constructor que abre la base de datos
     constructor(dbName, trace = false) {
       super();
-      this.dbName = dbName;
-      this.db = null;
+      this.$dbName = dbName;
+      this.$db = null;
+      this.$innerSchema = null;
       this._trace = trace;
+    }
+
+    getInnerSchema() {
+      this.constructor.trace("browsie.getInnerSchema", arguments);
+      return this.$innerSchema;
+    }
+
+    setInnerSchema(innerSchema) {
+      this.constructor.trace("browsie.setInnerSchema", arguments);
+      if (!(innerSchema instanceof LswSchema)) {
+        throw new Error(`Required parameter «innerSchema» to be an instance of LswSchema on «browsie.setInnerSchema»`);
+      }
+      this.$innerSchema = innerSchema;
     }
 
     // Abre la base de datos
     open() {
       this.constructor.trace("browsie.open", arguments);
       return new Promise((resolve, reject) => {
-        const request = indexedDB.open(this.dbName);
+        const request = indexedDB.open(this.$dbName);
 
         request.onsuccess = () => {
-          this.db = request.result;
-          resolve(this.db);
+          this.$db = request.result;
+          resolve(this.$db);
         };
-        request.onerror = (error) => reject(this._expandError(error, `Error on «browsie.open» operation over database «${this.dbName}»: `));
+        request.onerror = (error) => reject(this._expandError(error, `Error on «browsie.open» operation over database «${this.$dbName}»: `));
       });
     }
 
     close(...args) {
       this.constructor.trace("browsie.close", arguments);
-      return this.db.close(...args);
+      return this.$db.close(...args);
     }
 
     // Método para seleccionar elementos de un store con un filtro
@@ -2868,7 +2907,7 @@
       this.constructor.trace("browsie.select", arguments);
       this.triggers.emit(`crud.select.one.${store}`, { store, filter });
       return new Promise((resolve, reject) => {
-        const transaction = this.db.transaction(store, 'readonly');
+        const transaction = this.$db.transaction(store, 'readonly');
         const objectStore = transaction.objectStore(store);
         const request = objectStore.getAll();
 
@@ -2887,7 +2926,7 @@
       this.constructor.trace("browsie.insert", arguments);
       this.triggers.emit(`crud.insert.one.${store}`, { store, item });
       return new Promise((resolve, reject) => {
-        const transaction = this.db.transaction(store, 'readwrite');
+        const transaction = this.$db.transaction(store, 'readwrite');
         const objectStore = transaction.objectStore(store);
         const request = objectStore.add(item);
 
@@ -2901,7 +2940,7 @@
       this.constructor.trace("browsie.update", arguments);
       this.triggers.emit(`crud.update.one.${store}`, { store, id, item });
       return new Promise((resolve, reject) => {
-        const transaction = this.db.transaction(store, 'readwrite');
+        const transaction = this.$db.transaction(store, 'readwrite');
         const objectStore = transaction.objectStore(store);
         const request = objectStore.put({ ...item, id });
 
@@ -2910,18 +2949,94 @@
       });
     }
 
+    // Método tipo upsert: que cambia solo los campos que le proporcionas (hace entre 1 y 2 queries)
+    async overwrite(store, idOrItem, item) {
+      this.constructor.trace("browsie.overwrite", arguments);
+      this.triggers.emit(`crud.overwrite.one.${store}`, { store, idOrItem, item });
+      const isId = typeof idOrItem === "string";
+      const isItem = typeof idOrItem === "object";
+      let previousItem = undefined;
+      if (isItem) {
+        previousItem = idOrItem;
+      } else if (isId) {
+        const matches = await this.select(store, it => it.id === idOrItem);
+        if (matches.length === 0) {
+          throw new Error(`Zero rows on overwrite operator. Cannot overwrite a row that does not exist on «browsie.overwrite»`);
+        } else if (matches.length > 1) {
+          throw new Error(`Multiple rows on overwrite operation. Cannot overwrite multiple rows. Ensure store «${store}» is using index «id» as unique value to complete this operation`);
+        }
+        previousItem = matches[0];
+      } else {
+        throw new Error(`Required parameter «idOrItem» to be a string or an object on «browsie.overwrite»`);
+      }
+      const newItem = Object.assign({}, previousItem, item);
+      return await this.update(store, newItem.id, newItem);
+    }
+
     // Método para eliminar un item de un store por ID
     delete(store, id) {
       this.constructor.trace("browsie.delete", arguments);
+      this._ensureIntegrity(store, id);
       this.triggers.emit(`crud.delete.one.${store}`, { store, id });
       return new Promise((resolve, reject) => {
-        const transaction = this.db.transaction(store, 'readwrite');
+        const transaction = this.$db.transaction(store, 'readwrite');
         const objectStore = transaction.objectStore(store);
         const request = objectStore.delete(id);
-
         request.onsuccess = () => resolve();
         request.onerror = (error) => reject(this._expandError(error, `Error on «browsie.delete» operation over store «${store}»: `));
       });
+    }
+
+    _getSchemaEntityByStoreName(store) {
+      this.constructor.trace("browsie._ensureIntegrity", arguments);
+      const innerSchema = this.getInnerSchema().$schema;
+      const tableIds = Object.keys(innerSchema.hasTables);
+      Iterating_tables:
+      for (let indexTables = 0; indexTables < tableIds.length; indexTables++) {
+        const tableId = tableIds[indexTables];
+        if(tableId === store) {
+          return innerSchema.hasTables[tableId];
+        }
+      }
+      return undefined;
+    }
+
+    _ensureIntegrity(store, id) {
+      this.constructor.trace("browsie._ensureIntegrity", arguments);
+      const innerSchema = this.getInnerSchema().$schema;
+      const tableIds = Object.keys(innerSchema.hasTables);
+      const sourceEntity = innerSchema.hasTables[store];
+      const sourceEntityId = sourceEntity.hasEntityId;
+      const boundColumns = [];
+      Iterating_tables:
+      for (let indexTables = 0; indexTables < tableIds.length; indexTables++) {
+        const tableId = tableIds[indexTables];
+        const tableData = innerSchema.hasTables[tableId];
+        const columnIds = Object.keys(tableData.hasColumns);
+        Iterating_columns:
+        for (let indexColumns = 0; indexColumns < columnIds.length; indexColumns++) {
+          const columnId = columnIds[indexColumns];
+          const columnData = tableData.hasColumns[columnId];
+          When_it_has_references: {
+            if (!columnData.refersTo) {
+              break When_it_has_references;
+            }
+            const { entity: schemaEntityId, property: entityColumnId, constraint = true } = columnData.refersTo;
+            if (!constraint) {
+              break When_it_has_references;
+            }
+            const isSameEntity = schemaEntityId === sourceEntityId;
+            if(!isSameEntity) {
+              break When_it_has_references;
+            }
+            boundColumns.push({
+              source: [store, entityColumnId],
+              mustCheck: [tableId, columnId]
+            });
+          }
+        }
+      }
+      console.log(`BOUND COLUMNS to ${store}:`, boundColumns);
     }
 
     _expandError(errorObject, baseMessage = false) {
@@ -2948,7 +3063,7 @@
       this.constructor.trace("browsie.select", arguments);
       this.triggers.emit(`crud.select.one.${store}`, { store, filter });
       return new Promise((resolve, reject) => {
-        const transaction = this.db.transaction(store, 'readonly');
+        const transaction = this.$db.transaction(store, 'readonly');
         const objectStore = transaction.objectStore(store);
         const request = objectStore.getAll();
 
@@ -2967,7 +3082,7 @@
       this.triggers.emit(`crud.select.many.${store}`, { store, filterFn });
 
       return new Promise((resolve, reject) => {
-        const transaction = this.db.transaction(store, 'readonly');
+        const transaction = this.$db.transaction(store, 'readonly');
         const objectStore = transaction.objectStore(store);
         const request = objectStore.openCursor(); // Usa cursor para recorrer la BD sin cargar todo en memoria
 
@@ -2999,7 +3114,7 @@
         if (items.length === 0) {
           return resolve(false);
         }
-        const transaction = this.db.transaction(store, 'readwrite');
+        const transaction = this.$db.transaction(store, 'readwrite');
         const objectStore = transaction.objectStore(store);
         let insertedCount = 0;
         items.forEach(item => {
@@ -3018,7 +3133,7 @@
       this.constructor.trace("browsie.updateMany", arguments);
       this.triggers.emit(`crud.update.many.${store}`, { store, filter, item });
       return new Promise((resolve, reject) => {
-        const transaction = this.db.transaction(store, 'readwrite');
+        const transaction = this.$db.transaction(store, 'readwrite');
         const objectStore = transaction.objectStore(store);
         const request = objectStore.openCursor();
         let updatedCount = 0;
@@ -3041,12 +3156,26 @@
       });
     }
 
+    // Método a tipo upsertAll para llenar los valores pero dejar los que no
+    async overwriteMany(store, filter, item) {
+      this.constructor.trace("browsie.overwriteMany", arguments);
+      this.triggers.emit(`crud.overwrite.many.${store}`, { store, filter, item });
+      const allMatches = await this.selectMany(store, filter);
+      const allResults = [];
+      for (let indexRow = 0; indexRow < allMatches.length; indexRow++) {
+        const row = allMatches[indexRow];
+        const result = await this.overwrite(store, row, item);
+        allResults.push(result);
+      }
+      return allResults;
+    }
+
     // Método para eliminar varios items de un store según un filtro
     deleteMany(store, filter) {
       this.constructor.trace("browsie.deleteMany", arguments);
       this.triggers.emit(`crud.delete.many.${store}`, { store, filter });
       return new Promise((resolve, reject) => {
-        const transaction = this.db.transaction(store, 'readwrite');
+        const transaction = this.$db.transaction(store, 'readwrite');
         const objectStore = transaction.objectStore(store);
         const request = objectStore.openCursor();
         let deletedCount = 0;
@@ -3285,7 +3414,7 @@
         toDatabase: this.config.temporaryDatabase,
         onAlterSchema: schema => {
           delete schema[this.parameters.tableSource];
-          const tableInput = this.adaptSchemaTableAsInput(currentSchema[this.parameters.tableSource]);
+          const tableInput = this.$adaptSchemaTableAsSchemaDefinition(currentSchema[this.parameters.tableSource]);
           schema[this.parameters.tableDestination] = tableInput;
           return schema;
         },
@@ -3369,7 +3498,7 @@
       await this.$populateDatabase({
         fromDatabase: this.parameters.fromDatabase,
         toDatabase: this.config.temporaryDatabase,
-        // @TOCONFIGURE: $$deleteColumn needs a specific hook (or none).
+        // !@TOCONFIGURE: $$deleteColumn needs a specific hook (or none).
         onMapTableId: false,
         onMapColumnId: false,
       });
@@ -3417,7 +3546,7 @@
       await this.$$transferBackTemporaryDatabase();
     }
 
-    adaptSchemaAsInput(schemaDefinition) {
+    $adaptSchemaAsSchemaDefinition(schemaDefinition) {
       const output = {};
       const tableIds = Object.keys(schemaDefinition);
       for (let index = 0; index < tableIds.length; index++) {
@@ -3430,26 +3559,26 @@
         for (let indexColumn = 0; indexColumn < columns.length; indexColumn++) {
           const column = columns[indexColumn];
           const columnId = column.name;
-          const columnInput = this.adaptSchemaColumnAsInput(column, columnId);
+          const columnInput = this.$adaptSchemaColumnAsSchemaDefinition(column, columnId);
           output[storeId].push(columnInput);
         }
       }
       return output;
     }
 
-    adaptSchemaTableAsInput(tableDefinition) {
+    $adaptSchemaTableAsSchemaDefinition(tableDefinition) {
       const output = [];
       const columns = tableDefinition.indexes;
       for (let indexColumn = 0; indexColumn < columns.length; indexColumn++) {
         const column = columns[indexColumn];
         const columnId = column.name;
-        const columnInput = this.adaptSchemaColumnAsInput(column, columnId);
+        const columnInput = this.$adaptSchemaColumnAsSchemaDefinition(column, columnId);
         output.push(columnInput);
       }
       return output;
     }
 
-    adaptSchemaColumnAsInput(column, columnId) {
+    $adaptSchemaColumnAsSchemaDefinition(column, columnId) {
       if (column.unique) {
         return "!" + columnId;
       } else {
@@ -3462,7 +3591,7 @@
       const { fromDatabase, toDatabase, onAlterSchema } = scenario;
       console.log(`⌛️ Replicating database from «${fromDatabase}» to «${toDatabase}» on «LswDatabaseMigration.$replicateSchema»`);
       const schemaDefinition = await LswDatabase.getSchema(fromDatabase);
-      const schemaInput = this.adaptSchemaAsInput(schemaDefinition);
+      const schemaInput = this.$adaptSchemaAsSchemaDefinition(schemaDefinition);
       let alteredSchema = schemaInput;
       if (onAlterSchema) {
         alteredSchema = onAlterSchema(schemaInput);
@@ -3497,12 +3626,12 @@
           Transfering_tables: {
             console.log(`⌛️ Transfering table «${tableId}» on «LswDatabaseMigration.$populateDatabase»`);
             let allRows = await fromConnection.selectMany(tableId, v => true);
-            console.log("What???")
+            console.log("[*] Getting table id");
             alteredTableId = tableId;
             if (onMapTableId) {
               alteredTableId = onMapTableId(tableId);
             }
-            console.log("What??? 222")
+            console.log("[*] Getting column id");
             if (onMapColumnId) {
               allRows = allRows.reduce((output, row) => {
                 const allKeys = Object.keys(row);
@@ -3520,9 +3649,7 @@
                 return output;
               }, []);
             }
-            console.log("What??? 333")
-            console.log(alteredTableId);
-            console.log(allRows);
+            console.log("[*] Got:", alteredTableId, allRows);
             await toConnection.insertMany(alteredTableId, allRows);
             console.log("What??? 444")
           }
@@ -3560,12 +3687,8 @@
 
   }
 
-  class Browsie extends BrowsieMigrable {
-
-  }
-
-  Browsie.default = Browsie;
-  window.Browsie = Browsie;
+  window.Browsie = BrowsieMigrable;
+  Browsie.default = BrowsieMigrable;
 
   /* Extended API */
 
