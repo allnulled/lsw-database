@@ -490,7 +490,12 @@
 
         request.onsuccess = () => {
           const result = request.result.filter(item => {
-            return Object.keys(filter).every(key => item[key] === filter[key]);
+            try {
+              return filter(item);
+            } catch (error) {
+              console.error("Error arised from filter callback on «browsie.select»");
+              throw error;
+            }
           });
           resolve(result);
         };
@@ -511,7 +516,13 @@
         request.onsuccess = (event) => {
           const cursor = event.target.result;
           if (cursor) {
-            if (filterFn(cursor.value)) { // Aplica la función de filtro
+            let isAccepted = undefined;
+            try {
+              filterFn(cursor.value);
+            } catch (error) {
+              console.error("Error arised from filter callback on «browsie.selectMany»");
+            }
+            if (isAccepted) { // Aplica la función de filtro
               results.push(cursor.value);
             }
             cursor.continue(); // Avanza al siguiente registro
