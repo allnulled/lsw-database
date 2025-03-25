@@ -494,7 +494,7 @@
               return filter(item);
             } catch (error) {
               console.error("Error arised from filter callback on «browsie.select»");
-              throw error;
+              return false;
             }
           });
           resolve(result);
@@ -518,7 +518,7 @@
           if (cursor) {
             let isAccepted = undefined;
             try {
-              filterFn(cursor.value);
+              isAccepted = filterFn(cursor.value);
             } catch (error) {
               console.error("Error arised from filter callback on «browsie.selectMany»");
             }
